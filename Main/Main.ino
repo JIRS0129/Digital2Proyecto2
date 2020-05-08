@@ -46,12 +46,14 @@ byte J2[8][8] = {
   {0, 0, 0, 0,  0, 0, 0, 0},
   {0, 0, 0, 0,  0, 0, 0, 0}
 };  //Player 2 score grid
+uint8_t multi[] = {1, 1};   //Multiplier from players for merging
 
 //**********************LOGIC VARIABLES*******************************************************
 byte x = 0;       //Grid's x location
 byte y = 0;       //Grid's y location
 bool serial = false;  //Keep track if serial comunication has happened and the data hasn't been processed
 bool buttons[] = {0,0,0,0, 0,0,0,0};  //Buttons' current state read from serial
+bool changes = false;       //Keep track if any changes (movements on the grid) were done
 
 
 void setup()
@@ -94,7 +96,52 @@ void loop()
 {
   
   if(buttons[0] == 1 and serial){   //If J1's up button pressed
+    moveGame(1, 7, 1, 1);         //Move grid upwards
     addNewTile(1);                //Add new random tile on J1's grid
+    serial = false;
+  }
+
+  if(buttons[1] == 1 and serial){   //If J1's right button pressed
+    moveGame(6, 0, -1, 0);         //Move grid to the rigth
+    addNewTile(1);                //Add new random tile on J1's grid
+    serial = false;
+  }
+
+  if(buttons[2] == 1 and serial){   //If J1's left button pressed
+    moveGame(1, 7, 1, 0);         //Move grid to the left
+    addNewTile(1);                //Add new random tile on J1's grid
+    serial = false;
+  }
+
+  if(buttons[3] == 1 and serial){   //If J1's down button pressed
+    moveGame(6, 0, -1, 1);         //Move grid downwards
+    addNewTile(1);                //Add new random tile on J1's grid
+    serial = false;
+  }
+
+
+
+  if(buttons[4] == 1 and serial){   //If J2's up button pressed
+    moveGame2(1, 7, 1, 1);         //Move grid upwards
+    addNewTile(0);                //Add new random tile on J2's grid
+    serial = false;
+  }
+
+  if(buttons[5] == 1 and serial){   //If J2's right button pressed
+    moveGame2(6, 0, -1, 0);         //Move grid to the right
+    addNewTile(0);                //Add new random tile on J2's grid
+    serial = false;
+  }
+
+  if(buttons[6] == 1 and serial){   //If J2's left button pressed
+    moveGame2(1, 7, 1, 0);         //Move grid to the left
+    addNewTile(0);                //Add new random tile on J2's grid
+    serial = false;
+  }
+
+  if(buttons[7] == 1 and serial){   //If J2's down button pressed
+    moveGame2(6, 0, -1, 1);         //Move grid downwards
+    addNewTile(0);                //Add new random tile on J2's grid
     serial = false;
   }
 
@@ -135,6 +182,107 @@ void addNewTile(bool Player){   //Adds new random tile to Player's grid
     J2[x][y] = 1; //Set on grid var
   }
 }
+
+void animate(uint16_t xAbs, uint16_t yAbs, byte imgNum, byte xlim, byte ylim, char direct){ //Animate movement un a direcction 
+  for(byte posx = 0; posx <= xlim; posx++){
+    for(byte posy = 0; posy <= ylim; posy++){
+      bmpDraw(images[imgNum], xAbs+posx*direct, yAbs+posy*direct);    //Move the tile xlim or ylim in a certain direction.
+    }
+  }
+}
+
+void moveGame(byte from, byte till, char adding, bool xy){    //Move tiles in x or y in a direction
+  if(xy){
+    for(byte posx = 0; posx <= 7; posx++){
+      do{
+        changes = 0;
+        for(char posy = from; posy*adding <= till; posy+=adding){
+          if(J1[posx][posy] != 0 and J1[posx][posy-adding] == 0){                       //If the prior place is a 0 and the current isn't
+            J1[posx][posy-adding] = J1[posx][posy];                                     //Move current to prior
+            J1[posx][posy] = 0;                                                         //Set current to 0
+            animate(8+18*posx, 48+18*posy, J1[posx][posy-adding]-1, 0, 17, -1*adding);  //Animate the movement
+            changes = 1;                                                                //Set that there's been a change to recheck
+          }else if(J1[posx][posy] == J1[posx][posy-adding] and J1[posx][posy] != 0){    //If prior is equal to current and they aren't 0
+            J1[posx][posy-adding] += 1;                                                 //Add 1 to prior
+            J1[posx][posy] = 0;                                                         //Set current to 0
+            animate(8+18*posx, 48+18*posy, J1[posx][posy-adding]-2, 0, 17, -1*adding);  //Animate the movement
+            bmpDraw(images[J1[posx][posy-adding]-1], 8+18*posx, 48+18*(posy-adding));   //Place new tile
+            multi[0] += 1;                                                              //Add to multiplier
+            changes = 1;                                                                //Set that there's been a change to recheck
+          }
+        }
+      }while(changes == 1);                                                             //Until there's no more changes
+    }
+  }else{
+    for(byte posy = 0; posy <= 7; posy++){
+      do{
+        changes = 0;
+        for(char posx = from; posx*adding <= till; posx+=adding){
+          if(J1[posx][posy] != 0 and J1[posx-adding][posy] == 0){
+            J1[posx-adding][posy] = J1[posx][posy];                                     //Move current to prior
+            J1[posx][posy] = 0;                                                         //Set current to 0
+            animate(8+18*posx, 48+18*posy, J1[posx-adding][posy]-1, 17, 0, -adding);    //Animate the movement
+            changes = 1;                                                                //Set that there's been a change to recheck
+          }else if(J1[posx][posy] == J1[posx-adding][posy] and J1[posx][posy] != 0){    //If prior is equal to current and they aren't 0
+            J1[posx-adding][posy] += 1;                                                 //Add 1 to prior
+            J1[posx][posy] = 0;                                                         //Set current to 0
+            animate(8+18*posx, 48+18*posy, J1[posx-adding][posy]-2, 17, 0, -adding);    //Animate the movement
+            bmpDraw(images[J1[posx-adding][posy]-1], 8+18*(posx-adding), 48+18*posy);   //Place new tile
+            multi[0] += 1;                                                              //Add to multiplier
+            changes = 1;                                                                //Set that there's been a change to recheck
+          }
+        }
+      }while(changes == 1);                                                             //Until there's no more changes
+    }
+  }
+}
+
+void moveGame2(byte from, byte till, char adding, bool xy){
+  if(xy){
+    for(byte posx = 0; posx <= 7; posx++){
+      do{
+        changes = 0;
+        for(char posy = from; posy*adding <= till; posy+=adding){
+          if(J2[posx][posy] != 0 and J2[posx][posy-adding] == 0){
+            J2[posx][posy-adding] = J2[posx][posy];                                       //Move current to prior
+            J2[posx][posy] = 0;                                                           //Set current to 0
+            animate(168+18*posx, 48+18*posy, J2[posx][posy-adding]-1, 0, 17, -1*adding);  //Animate the movement
+            changes = 1;                                                                  //Set that there's been a change to recheck
+          }else if(J2[posx][posy] == J2[posx][posy-adding] and J2[posx][posy] != 0){      //If prior is equal to current and they aren't 0
+            J2[posx][posy-adding] += 1;                                                   //Add 1 to prior
+            J2[posx][posy] = 0;                                                           //Set current to 0
+            animate(168+18*posx, 48+18*posy, J2[posx][posy-adding]-2, 0, 17, -1*adding);  //Animate the movement
+            bmpDraw(images[J2[posx][posy-adding]-1], 168+18*posx, 48+18*(posy-adding));   //Place new tile
+            multi[1] += 1;                                                                //Add to multiplier
+            changes = 1;                                                                  //Set that there's been a change to recheck
+          }
+        }
+      }while(changes == 1);                                                             //Until there's no more changes
+    }
+  }else{
+    for(byte posy = 0; posy <= 7; posy++){
+      do{
+        changes = 0;
+        for(char posx = from; posx*adding <= till; posx+=adding){
+          if(J2[posx][posy] != 0 and J2[posx-adding][posy] == 0){
+            J2[posx-adding][posy] = J2[posx][posy];                                     //Move current to prior
+            J2[posx][posy] = 0;                                                         //Set current to 0
+            animate(168+18*posx, 48+18*posy, J2[posx-adding][posy]-1, 17, 0, -adding);  //Animate the movement
+            changes = 1;                                                                //Set that there's been a change to recheck
+          }else if(J2[posx][posy] == J2[posx-adding][posy] and J2[posx][posy] != 0){    //If prior is equal to current and they aren't 0
+            J2[posx-adding][posy] += 1;                                                 //Add 1 to prior
+            J2[posx][posy] = 0;                                                         //Set current to 0
+            animate(168+18*posx, 48+18*posy, J2[posx-adding][posy]-2, 17, 0, -adding);  //Animate the movement
+            bmpDraw(images[J2[posx-adding][posy]-1], 168+18*(posx-adding), 48+18*posy); //Place new tile
+            multi[1] += 1;                                                              //Add to multiplier
+            changes = 1;                                                                //Set that there's been a change to recheck
+          }
+        }
+      }while(changes == 1);                                                             //Until there's no more changes
+    }
+  }
+}
+
 
 
 
