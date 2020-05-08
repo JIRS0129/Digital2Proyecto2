@@ -23,6 +23,8 @@ Adafruit_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, A4);  //tft initialization
 */
 //**********************IMAGE VARIABLES*******************************************************
 char images[][10] = {"1.BMP", "2.BMP", "3.BMP", "4.BMP", "5.BMP", "6.BMP", "7.BMP", "8.BMP", "9.BMP", "10.BMP"};  // Tile pictures
+char numbers[][10] = {"N0.BMP", "N1.BMP", "N2.BMP", "N3.BMP", "N4.BMP", "N5.BMP", "N6.BMP", "N7.BMP", "N8.BMP", "N9.BMP"};  //Score number names
+char numbersG[][10] = {"N0G.BMP", "N1G.BMP", "N2G.BMP", "N3G.BMP", "N4G.BMP", "N5G.BMP", "N6G.BMP", "N7G.BMP", "N8G.BMP", "N9G.BMP"}; //Moves number names
 
 //**********************GAMEPLAY VARIABLES*******************************************************
 byte J1[8][8] = {
@@ -46,6 +48,10 @@ byte J2[8][8] = {
   {0, 0, 0, 0,  0, 0, 0, 0},
   {0, 0, 0, 0,  0, 0, 0, 0}
 };  //Player 2 score grid
+byte maxMoves = 10;         //Maximum moves selected at begining
+uint8_t JMoves[] = {1, 1};  //Moves players have done
+uint16_t JScore[] = {0, 0}; //Score from players
+uint8_t win = 0;            //When someone wins
 uint8_t multi[] = {1, 1};   //Multiplier from players for merging
 
 //**********************LOGIC VARIABLES*******************************************************
@@ -55,6 +61,21 @@ bool serial = false;  //Keep track if serial comunication has happened and the d
 bool buttons[] = {0,0,0,0, 0,0,0,0};  //Buttons' current state read from serial
 bool changes = false;       //Keep track if any changes (movements on the grid) were done
 
+//**********************MUSIC VARIABLES*******************************************************
+
+int melody[] = { 
+392, 392, 440, 392, 330, 262, 330, 392, 440, 392, 330, 0, 392, 392, 392, 392, 523, 523, 587, 523, 440, 349, 440, 523, 587, 523, 440, 392, 392, 392, 392, 392, 392, 440, 392, 330, 262, 330, 392, 440, 392, 330, 0, 392, 392, 392, 392, 523, 523, 587, 523, 440, 349, 440, 523, 587, 523, 440, 392, 392, 392, 392, 523, 440, 392, 330, 392, 392, 440, 440, 440, 494, 494, 523, 392, 392, 440, 392
+};  //Melody's frequency values. Not used for ram limitations
+int noteDurations[] = { 
+250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 750, 750, 750, 750, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 500, 750, 750, 750, 750, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 750, 750, 750, 750, 250, 250, 250, 250, 250, 250, 250, 250, 250, 250, 500, 750, 750, 750, 750, 750, 750, 750, 750, 500, 250, 750, 500, 250, 500, 250, 1500, 125, 125, 125, 125
+}; //Melody's notes duration values. Not used for ram limitations
+
+uint32_t previousMillis = millis();
+uint8_t cNote=0;
+byte contador = 0;
+
+//**********************ARDUINO RESET FUNCTION*******************************************************
+void(* resetFunc) (void) = 0; //declare reset function @ address 0
 
 void setup()
 {
@@ -73,7 +94,51 @@ void setup()
   return;
   }
 
+  //Load images 
+  bmpDraw("FONDO2.BMP", 0, 0);
+  bmpDraw("START.BMP", 60, 105);
+  bmpDraw(numbersG[1], 204, 111);
+  bmpDraw(numbersG[0], 222, 111);
+  bool changeMove = false;
+  while(1){
+    readControls();
+    if(buttons[0] and serial){
+      if(changeMove){                   //If changing movements, and up button pressed, increase movements and display images
+        maxMoves = maxMoves%99 + 1;
+        bmpDraw(numbersG[int(maxMoves/10)], 204, 111);
+        bmpDraw(numbersG[maxMoves%10], 222, 111);
+      }else{
+        break;                          //If not changing movements, break loop and start game
+      }
+      serial = false;
+    }else if(buttons[1] and serial){    //If move to right, enable up/down buttons to change max Movements
+      changeMove = true;
+      serial = false;
+    }else if(buttons[2] and serial){    //If move to left, disable up/down buttons to change max Movements
+      changeMove = false;
+      serial = false;
+    }else if(buttons[3] and serial){    //If changing movements, and down button pressed, decrease movements and display images
+      if(changeMove){
+        maxMoves -= 1;
+        if(maxMoves == 0){
+          maxMoves = 99;
+        }
+        bmpDraw(numbersG[int(maxMoves/10)], 204, 111);
+        bmpDraw(numbersG[maxMoves%10], 222, 111);
+      }
+      serial = false;
+    }
+  }
   
+
+  //Load fixed images
+  bmpDraw("FONDO.BMP", 0, 0);
+  bmpDraw("GAME.BMP", 8, 48);
+  bmpDraw("GAME.BMP", 168, 48);
+  bmpDraw("SCORET.BMP", 10, 35);
+  bmpDraw("SCORET.BMP", 170, 35);
+  
+
   for(byte x = 0; x < 10; x++){
     bmpDraw(images[x], 7+32*x, 200);    //Load tiles in order for player to know the order
   }
@@ -96,54 +161,84 @@ void loop()
 {
   
   if(buttons[0] == 1 and serial){   //If J1's up button pressed
-    moveGame(1, 7, 1, 1);         //Move grid upwards
-    addNewTile(1);                //Add new random tile on J1's grid
+    if(JMoves[0] < maxMoves){       //If not on max moves
+      moveGame(1, 7, 1, 1);         //Move grid upwards
+      refreshScore(0);              //Refresh J1's score
+      addNewTile(1);                //Add new random tile on J1's grid
+    }
     serial = false;
   }
 
   if(buttons[1] == 1 and serial){   //If J1's right button pressed
-    moveGame(6, 0, -1, 0);         //Move grid to the rigth
-    addNewTile(1);                //Add new random tile on J1's grid
+    if(JMoves[0] < maxMoves){       //If not on max moves
+      moveGame(6, 0, -1, 0);         //Move grid to the rigth
+      refreshScore(0);              //Refresh J1's score
+      addNewTile(1);                //Add new random tile on J1's grid
+    }
     serial = false;
   }
 
   if(buttons[2] == 1 and serial){   //If J1's left button pressed
-    moveGame(1, 7, 1, 0);         //Move grid to the left
-    addNewTile(1);                //Add new random tile on J1's grid
+    if(JMoves[0] < maxMoves){       //If not on max moves
+      moveGame(1, 7, 1, 0);         //Move grid to the left
+      refreshScore(0);              //Refresh J1's score
+      addNewTile(1);                //Add new random tile on J1's grid
+    }
     serial = false;
   }
 
   if(buttons[3] == 1 and serial){   //If J1's down button pressed
-    moveGame(6, 0, -1, 1);         //Move grid downwards
-    addNewTile(1);                //Add new random tile on J1's grid
+    if(JMoves[0] < maxMoves){       //If not on max moves
+      moveGame(6, 0, -1, 1);         //Move grid downwards
+      refreshScore(0);              //Refresh J1's score
+      addNewTile(1);                //Add new random tile on J1's grid
+    }
     serial = false;
   }
 
 
 
   if(buttons[4] == 1 and serial){   //If J2's up button pressed
-    moveGame2(1, 7, 1, 1);         //Move grid upwards
-    addNewTile(0);                //Add new random tile on J2's grid
+    if(JMoves[1] < maxMoves){       //If not on max moves
+      moveGame2(1, 7, 1, 1);         //Move grid upwards
+      refreshScore(1);              //Refresh J2's score
+      addNewTile(0);                //Add new random tile on J2's grid
+    }
     serial = false;
   }
 
   if(buttons[5] == 1 and serial){   //If J2's right button pressed
-    moveGame2(6, 0, -1, 0);         //Move grid to the right
-    addNewTile(0);                //Add new random tile on J2's grid
+    if(JMoves[1] < maxMoves){       //If not on max moves
+      moveGame2(6, 0, -1, 0);         //Move grid to the right
+      refreshScore(1);              //Refresh J2's score
+      addNewTile(0);                //Add new random tile on J2's grid
+    }
     serial = false;
   }
 
   if(buttons[6] == 1 and serial){   //If J2's left button pressed
-    moveGame2(1, 7, 1, 0);         //Move grid to the left
-    addNewTile(0);                //Add new random tile on J2's grid
+    if(JMoves[1] < maxMoves){       //If not on max moves
+      moveGame2(1, 7, 1, 0);         //Move grid to the left
+      refreshScore(1);              //Refresh J2's score
+      addNewTile(0);                //Add new random tile on J2's grid
+    }
     serial = false;
   }
 
   if(buttons[7] == 1 and serial){   //If J2's down button pressed
-    moveGame2(6, 0, -1, 1);         //Move grid downwards
-    addNewTile(0);                //Add new random tile on J2's grid
+    if(JMoves[1] < maxMoves){       //If not on max moves
+      moveGame2(6, 0, -1, 1);         //Move grid downwards
+      refreshScore(1);              //Refresh J2's score
+      addNewTile(0);                //Add new random tile on J2's grid
+    }
     serial = false;
   }
+
+  if(win > 0 and buttons[0] and serial){  //If someone's won and J1 pressed up
+    resetFunc();  //call arduino reset
+    serial = false;
+  }
+
 
   
   readControls();                   //Read controls from serial
@@ -151,6 +246,91 @@ void loop()
 }
 
 
+void refreshScore(bool player){ //Refresh player's score and numbers on screen
+  JMoves[player] += 1;      //Add moves
+  uint16_t score = 0;       //Reset score var
+
+  if(player){
+    for(byte posx = 0; posx <= 7; posx++){
+      for(byte posy = 0; posy <= 7; posy++){    //Go through all grid and add 2^n to score. If overflow, set to cap
+        if(J2[posx][posy] > 0){
+          if(65535 - score >= pow(2, J2[posx][posy]) ){
+            if(J2[posx][posy] > 1){
+              score += int(pow(2, J2[posx][posy])) + 1;
+            }else{
+              score += int(pow(2, J2[posx][posy]));
+            }
+          }else{
+            score = 65535;
+          }
+        }
+      }
+    }
+  }else{
+    for(byte posx = 0; posx <= 7; posx++){
+      for(byte posy = 0; posy <= 7; posy++){    //Go through all grid and add 2^n to score. If overflow, set to cap
+        if(J1[posx][posy] > 0){
+          if(65535 - score >= pow(2, J1[posx][posy]) ){
+            if(J1[posx][posy] > 1){
+              score += int(pow(2, J1[posx][posy])) + 1;
+            }else{
+              score += int(pow(2, J1[posx][posy]));
+            }
+          }else{
+            score = 65535;
+          }
+        }
+      }
+    }
+  }
+  if(65535/multi[player] >= score){ //Multiply score. If it overflows cap, set to cap
+    score *= multi[player];
+  }else{
+    score = 65535;
+  }
+  
+  //Through divisions, casting and module, get each digit and display image with an offset
+  bmpDraw(numbers[int(score/10000)], 50+160*player, 36);
+  score = score%10000;
+  bmpDraw(numbers[int(score/1000)], 56+160*player, 36);
+  score = score%1000;
+  bmpDraw(numbers[int(score/100)], 62+160*player, 36);
+  score = score%100;
+  bmpDraw(numbers[int(score/10)], 68+160*player, 36);
+  bmpDraw(numbers[score%10], 74+160*player, 36);
+
+  
+  JScore[player] = score;
+
+
+  if(score == 65535){   //If someone got to cap score, display 'play again' image and set win variable
+    win = player + 1;
+    bmpDraw("AGAIN.BMP", 136, 100);
+  }else if(JMoves[0] == maxMoves and JMoves[1] == maxMoves){  //If both got to max moves
+    if(JScore[0] < JScore[1]){      //Check who won, set variable and display 'play again' image
+      win = 2;
+    }else if(JScore[0] > JScore[1]){
+      win = 1;
+    }else{
+      win = 3;
+    }
+    bmpDraw("AGAIN.BMP", 136, 100);
+  }
+
+  switch(win){  //Depending on who won, display image
+    case 1:
+      bmpDraw("WIN1.BMP", 122, 40);
+      break;
+    case 2:
+      bmpDraw("WIN2.BMP", 122, 40);
+      break;
+    case 3:
+      bmpDraw("WIN3.BMP", 131, 40);
+      break;
+  }
+
+  
+}
 
 void readControls(){    //Reads controls from serial
   if(Serial.read() == 59){  //Start bit (';')
@@ -282,7 +462,6 @@ void moveGame2(byte from, byte till, char adding, bool xy){
     }
   }
 }
-
 
 
 
