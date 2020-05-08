@@ -18,9 +18,48 @@
 
 Adafruit_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, A4);  //tft initialization
 
+/*
+ * VARIABLES
+*/
+//**********************IMAGE VARIABLES*******************************************************
+char images[][10] = {"1.BMP", "2.BMP", "3.BMP", "4.BMP", "5.BMP", "6.BMP", "7.BMP", "8.BMP", "9.BMP", "10.BMP"};  // Tile pictures
+
+//**********************GAMEPLAY VARIABLES*******************************************************
+byte J1[8][8] = {
+  {0, 0, 0, 0,  0, 0, 0, 0},
+  {0, 0, 0, 0,  0, 0, 0, 0},
+  {0, 0, 0, 0,  0, 0, 0, 0},
+  {0, 0, 0, 0,  0, 0, 0, 0},
+  {0, 0, 0, 0,  0, 0, 0, 0},
+  {0, 0, 0, 0,  0, 0, 0, 0},
+  {0, 0, 0, 0,  0, 0, 0, 0},
+  {0, 0, 0, 0,  0, 0, 0, 0}
+};  //Player 1 score grid
+
+byte J2[8][8] = {
+  {0, 0, 0, 0,  0, 0, 0, 0},
+  {0, 0, 0, 0,  0, 0, 0, 0},
+  {0, 0, 0, 0,  0, 0, 0, 0},
+  {0, 0, 0, 0,  0, 0, 0, 0},
+  {0, 0, 0, 0,  0, 0, 0, 0},
+  {0, 0, 0, 0,  0, 0, 0, 0},
+  {0, 0, 0, 0,  0, 0, 0, 0},
+  {0, 0, 0, 0,  0, 0, 0, 0}
+};  //Player 2 score grid
+
+//**********************LOGIC VARIABLES*******************************************************
+byte x = 0;       //Grid's x location
+byte y = 0;       //Grid's y location
+bool serial = false;  //Keep track if serial comunication has happened and the data hasn't been processed
+bool buttons[] = {0,0,0,0, 0,0,0,0};  //Buttons' current state read from serial
+
+
 void setup()
 {
-
+  pinMode(A0, INPUT);
+  randomSeed(analogRead(0));    //Set random seed from analog read to get actual random values
+  pinMode(A0, OUTPUT);
+  Serial.begin(9600);
   tft.reset();  
   uint16_t identifier = tft.readID();
   pinMode(10, OUTPUT);
@@ -31,15 +70,71 @@ void setup()
   progmemPrintln(PSTR("failed!"));
   return;
   }
+
+  
+  for(byte x = 0; x < 10; x++){
+    bmpDraw(images[x], 7+32*x, 200);    //Load tiles in order for player to know the order
+  }
+
+  //Generate starting tiles
+  y = random(8);
+  x = random(8);
+  bmpDraw(images[0], 8+x*18, 48+y*18);
+  J1[x][y] = 1;
+  y = random(8);
+  x = random(8);
+  bmpDraw(images[0], 168+x*18, 48+y*18);
+  J2[x][y] = 1;
+
+  //Reset serial
+  serial = false;
 }
 
 void loop()
 {
-  bmpDraw("Image1.bmp", 0, 0);
-  bmpDraw("Image2.bmp", 0, 0);
-  bmpDraw("Image3.bmp", 0, 0);
+  
+  if(buttons[0] == 1 and serial){   //If J1's up button pressed
+    addNewTile(1);                //Add new random tile on J1's grid
+    serial = false;
+  }
+
+  
+  readControls();                   //Read controls from serial
+
 }
 
+
+
+void readControls(){    //Reads controls from serial
+  if(Serial.read() == 59){  //Start bit (';')
+    for(byte posx = 0; posx < 7; posx++){ //read and save buttons in order
+      while(Serial.available() <= 1){}
+      buttons[posx] = Serial.read()-48;
+    }
+    Serial.flush(); //Flush any new data to reset button
+    serial = true;
+  }
+}
+
+void addNewTile(bool Player){   //Adds new random tile to Player's grid
+  if(Player){
+    do{
+      x = random(8);
+      y = random(8);
+    }while(J1[x][y] != 0);  //Make sure it's not overwriting an existing tile
+  
+    bmpDraw(images[0], 8+18*x, 48+18*y);  //Draw tile
+    J1[x][y] = 1; //Set on grid var
+  }else{
+    do{
+      x = random(8);
+      y = random(8);
+    }while(J2[x][y] != 0);  //Make sure it's not overwriting an existing tile
+  
+    bmpDraw(images[0], 168+18*x, 48+18*y);  //Draw tile
+    J2[x][y] = 1; //Set on grid var
+  }
+}
 
 
 
